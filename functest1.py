@@ -16,11 +16,14 @@ from datetime import datetime, timedelta
 from openpyxl import load_workbook
 import logging
 import firebase_admin
-from firebase_admin import credentials, initialize_app, storage
+import os
+from firebase_admin import credentials, initialize_app, storage,firestore
 
 # 初始化 Firebase Admin
-cred = credentials.Certificate("C:\\Users\\hcjarch\\PycharmProjects\\linebot1.0\\linebot.json")
+
+cred = credentials.Certificate("linebot.json")
 firebase_app = firebase_admin.initialize_app(cred, {'storageBucket': 'loveless-b16d1.appspot.com'})
+db = firestore.client()
 
 app = Flask(__name__)
 # LINE BOT info
@@ -152,7 +155,7 @@ def is_slot_booked(ws, date, time):
     return False
 
 def handle_reservation_request(reply_token):
-    excel_file_path = 'C:\\Users\\hcjarch\\PycharmProjects\\linebot1.0\\bookings.xlsx'
+    excel_file_path = 'bookings.xlsx'
     wb = load_workbook(excel_file_path)
     ws = wb.active
 
@@ -273,13 +276,26 @@ def handle_booking_confirmation(user_id, message_text,reply_token):
     parts = message_text.split()  # ['預約時間', '4/15', '11:00']
     if len(parts) == 3 and parts[0] == '預約時間':
         try:
+            booking_date = parts[1]  # 假设这里是 '2024-04-15'
+            booking_time = parts[2]  # '11:00'
+            booking_datetime = datetime.strptime(f'{booking_date} {booking_time}', '%Y-%m-%d %H:%M')
+
+            # 在Firestore中保存预约信息
+            save_reservation_to_firestore(user_id, booking_datetime.strftime('%Y-%m-%d'), booking_time)
+
+            confirmation_message = f"預約成功!您預約的時間為{booking_date} {booking_time}"
+            line_bot_api.reply_message(
+                reply_token,
+                TextSendMessage(text=confirmation_message)
+            )
+        try:
             booking_date = parts[1]  # Assuming this is '2024-04-15'
             booking_time = parts[2]  # '11:00'
             booking_datetime = datetime.strptime(f'{booking_date} {booking_time}', '%Y-%m-%d %H:%M')
 
-            # 加载Excel工作簿
-            # 用您的 Excel 文件的实际路径替换此处
-            excel_file_path = 'C:\\Users\\hcjarch\\PycharmProjects\\linebot1.0\\bookings.xlsx'
+            加载Excel工作簿
+            用您的 Excel 文件的实际路径替换此处
+            excel_file_path = os.getenv('BOOKINGS_FILE_PATH', 'bookings.xlsx')
 
             wb = load_workbook(excel_file_path)
             ws = wb.active
@@ -314,6 +330,7 @@ def handle_booking_confirmation(user_id, message_text,reply_token):
             line_bot_api.push_message(user_id, TextSendMessage(text=follow_up_message))
 
             logging.info(f'用户 {user_id} 预约了 {booking_date} {booking_time} 的时间')
+
 
         except Exception as e:
             # 處理所有可能的錯誤
@@ -379,6 +396,14 @@ def get_image_url_from_firebase(file_name):
 
     else:
         return None
+
+# def save_reservation_to_firestore(user_id, date, time):
+#     reservations_collection = db.collection('reservations')
+#     reservation_ref = reservations_collection.document(user_id)
+#     reservation_ref.set({
+#         'date': date,
+#         'time': time
+#     })
 
 @app.route('/get_image', methods=['POST'])
 def get_image():
